@@ -9,12 +9,13 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import structlog
 
 from app.core.settings import settings
-from app.api.v1.endpoints import health, papers, tweets, search, users, auth_test
+from app.core.redis import close_redis_client
+from app.api.middleware import SessionMiddleware
+from app.api.v1.endpoints import health, papers, tweets, search, users, auth_test, cache
 from app.db.base import create_tables, close_engine
 
 # Import models to ensure they're registered with SQLAlchemy
 from app.models import ArxivModel, TwitterModel, WorkingQueueModel, UserModel
-
 
 # Configure structured logging
 structlog.configure(
@@ -72,10 +73,26 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to initialize database tables", error=str(e))
         # Don't fail startup - let health checks report database issues
     
+    # Initialize Redis client (will be created on first use)
+    try:
+        from app.core.redis import get_redis_client
+        redis_client = await get_redis_client()
+        logger.info("Redis client initialized successfully")
+    except Exception as e:
+        logger.error("Failed to initialize Redis client", error=str(e))
+        # Don't fail startup - let health checks report Redis issues
+    
     yield
     
     # Shutdown
     logger.info("Shutting down DLMonitor API")
+    
+    # Close Redis connections
+    try:
+        await close_redis_client()
+        logger.info("Redis connections closed")
+    except Exception as e:
+        logger.error("Error closing Redis connections", error=str(e))
     
     # Close database connections
     try:
@@ -115,6 +132,16 @@ def create_application() -> FastAPI:
         allow_headers=settings.allowed_headers,
     )
     
+    # Session middleware
+    app.add_middleware(
+        SessionMiddleware,
+        session_cookie_name="dlmonitor_session",
+        session_cookie_max_age=7 * 24 * 3600,  # 7 days
+        session_cookie_secure=settings.is_production,
+        session_cookie_httponly=True,
+        session_cookie_samesite="lax"
+    )
+    
     # Include routers
     app.include_router(health.router, prefix="/api/v1", tags=["Health"])
     app.include_router(papers.router, prefix="/api/v1", tags=["Papers"])
@@ -122,6 +149,7 @@ def create_application() -> FastAPI:
     app.include_router(search.router, prefix="/api/v1", tags=["Search"])
     app.include_router(users.router, prefix="/api/v1", tags=["Users"])
     app.include_router(auth_test.router, prefix="/api/v1", tags=["Auth Testing"])
+    app.include_router(cache.router, prefix="/api/v1", tags=["Cache Management"])
     
     return app
 
@@ -140,6 +168,7 @@ async def root():
         "environment": settings.environment,
         "docs_url": "/docs" if not settings.is_production else "Documentation disabled in production",
         "database": "SQLAlchemy 2.0 with async support",
+        "cache": "Redis with session management and response caching",
         "authentication": "Supabase Auth with JWT tokens",
         "models": ["ArxivModel", "TwitterModel", "WorkingQueueModel", "UserModel"],
     } 

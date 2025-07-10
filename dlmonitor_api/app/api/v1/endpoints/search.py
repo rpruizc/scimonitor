@@ -16,6 +16,7 @@ from app.models.user import UserModel
 from app.api.dependencies.auth import get_optional_user
 from app.api.v1.endpoints.papers import PaperResponse
 from app.api.v1.endpoints.tweets import TweetResponse
+from app.core.cache import cache_search_results, cache_static_data, cache_invalidator
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -150,6 +151,7 @@ async def unified_search(
 
 
 @router.get("/search/papers", response_model=List[PaperResponse], summary="Search papers only")
+@cache_search_results(ttl=60)  # Cache for 1 minute
 async def search_papers_only(
     session: AsyncSession = Depends(get_async_session),
     current_user: Optional[UserModel] = Depends(get_optional_user),
@@ -181,6 +183,7 @@ async def search_papers_only(
 
 
 @router.get("/search/tweets", response_model=List[TweetResponse], summary="Search tweets only")
+@cache_search_results(ttl=60)  # Cache for 1 minute
 async def search_tweets_only(
     session: AsyncSession = Depends(get_async_session),
     current_user: Optional[UserModel] = Depends(get_optional_user),
@@ -212,6 +215,7 @@ async def search_tweets_only(
 
 
 @router.get("/search/stats", response_model=SearchStats, summary="Search statistics")
+@cache_static_data(ttl=300)  # Cache for 5 minutes
 async def search_statistics(
     session: AsyncSession = Depends(get_async_session)
 ):
