@@ -9,8 +9,10 @@ import redis.asyncio as redis
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 import structlog
+from sqlalchemy import text
 
 from app.core.settings import settings
+from app.db.base import AsyncSessionLocal, engine
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -62,11 +64,11 @@ async def detailed_health_check():
     if redis_status.status != "healthy":
         overall_status = "degraded"
     
-    # Test database connection (when implemented)
-    # db_status = await _check_database()
-    # services["database"] = db_status
-    # if db_status.status != "healthy":
-    #     overall_status = "degraded"
+    # Test database connection
+    db_status = await _check_database()
+    services["database"] = db_status
+    if db_status.status != "healthy":
+        overall_status = "degraded"
     
     return HealthResponse(
         status=overall_status,
@@ -86,11 +88,18 @@ async def readiness_check():
     try:
         # Test critical services
         redis_status = await _check_redis()
+        db_status = await _check_database()
         
         if redis_status.status != "healthy":
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Service not ready - Redis unavailable"
+            )
+        
+        if db_status.status != "healthy":
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Service not ready - Database unavailable"
             )
         
         return {"status": "ready", "timestamp": datetime.utcnow()}
@@ -151,29 +160,43 @@ async def _check_redis() -> ServiceStatus:
         )
 
 
-# TODO: Implement database health check
-# async def _check_database() -> ServiceStatus:
-#     """Test database connection and basic operations."""
-#     start_time = datetime.utcnow()
-#     
-#     try:
-#         # Test database connection
-#         # This will be implemented in Task 1.2
-#         
-#         response_time = (datetime.utcnow() - start_time).total_seconds() * 1000
-#         
-#         return ServiceStatus(
-#             status="healthy",
-#             response_time_ms=response_time,
-#             details={"connection": "successful"}
-#         )
-#     
-#     except Exception as e:
-#         response_time = (datetime.utcnow() - start_time).total_seconds() * 1000
-#         logger.error("Database health check failed", error=str(e))
-#         
-#         return ServiceStatus(
-#             status="unhealthy",
-#             response_time_ms=response_time,
-#             details={"error": str(e)}
-#         ) 
+async def _check_database() -> ServiceStatus:
+    """Test database connection and basic operations."""
+    start_time = datetime.utcnow()
+    
+    try:
+        # Test database connection using async session
+        async with AsyncSessionLocal() as session:
+            # Execute a simple query to test connectivity
+            result = await session.execute(text("SELECT 1 as health_check"))
+            row = result.fetchone()
+            
+            # Test table existence (optional - will fail gracefully if tables don't exist)
+            try:
+                await session.execute(text("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'"))
+                tables_exist = True
+            except Exception:
+                tables_exist = False
+        
+        response_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+        
+        return ServiceStatus(
+            status="healthy",
+            response_time_ms=response_time,
+            details={
+                "connection": "successful",
+                "query_test": "passed",
+                "tables_exist": tables_exist,
+                "database_url": settings.database_url.split("@")[-1] if "@" in settings.database_url else "masked"
+            }
+        )
+    
+    except Exception as e:
+        response_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+        logger.error("Database health check failed", error=str(e))
+        
+        return ServiceStatus(
+            status="unhealthy",
+            response_time_ms=response_time,
+            details={"error": str(e)}
+        ) 

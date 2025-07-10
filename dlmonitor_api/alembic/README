@@ -1,0 +1,56 @@
+DLMonitor API Database Migrations
+================================
+
+This directory contains Alembic migration scripts for the DLMonitor API database.
+
+## Setup
+
+Ensure you have the correct environment variables set:
+- DATABASE_URL: PostgreSQL connection string
+
+## Commands
+
+Generate a new migration:
+```bash
+cd dlmonitor_api
+alembic revision --autogenerate -m "Description of changes"
+```
+
+Apply migrations:
+```bash
+cd dlmonitor_api
+alembic upgrade head
+```
+
+Downgrade migrations:
+```bash
+cd dlmonitor_api
+alembic downgrade -1
+```
+
+Show current revision:
+```bash
+cd dlmonitor_api
+alembic current
+```
+
+Show migration history:
+```bash
+cd dlmonitor_api
+alembic history --verbose
+```
+
+## Migration from Legacy Schema
+
+When migrating from the legacy Flask application:
+
+1. Ensure both databases are accessible
+2. Run data migration scripts to transfer existing data
+3. Apply the new schema migrations
+4. Verify data integrity
+
+The new schema includes:
+- Modern SQLAlchemy 2.0 models with type annotations
+- Async database support
+- Enhanced indexing for better performance
+- Additional fields for job queue management 

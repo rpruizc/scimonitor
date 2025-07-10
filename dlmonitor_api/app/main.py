@@ -10,6 +10,10 @@ import structlog
 
 from app.core.settings import settings
 from app.api.v1.endpoints import health
+from app.db.base import create_tables, close_engine
+
+# Import models to ensure they're registered with SQLAlchemy
+from app.models import ArxivModel, TwitterModel, WorkingQueueModel
 
 
 # Configure structured logging
@@ -55,10 +59,25 @@ async def lifespan(app: FastAPI):
         )
         logger.info("Sentry initialized for error tracking")
     
+    # Initialize database tables
+    try:
+        await create_tables()
+        logger.info("Database tables initialized successfully")
+    except Exception as e:
+        logger.error("Failed to initialize database tables", error=str(e))
+        # Don't fail startup - let health checks report database issues
+    
     yield
     
     # Shutdown
     logger.info("Shutting down DLMonitor API")
+    
+    # Close database connections
+    try:
+        await close_engine()
+        logger.info("Database connections closed")
+    except Exception as e:
+        logger.error("Error closing database connections", error=str(e))
 
 
 def create_application() -> FastAPI:
@@ -110,4 +129,6 @@ async def root():
         "version": settings.app_version,
         "environment": settings.environment,
         "docs_url": "/docs" if not settings.is_production else "Documentation disabled in production",
+        "database": "SQLAlchemy 2.0 with async support",
+        "models": ["ArxivModel", "TwitterModel", "WorkingQueueModel"],
     } 
