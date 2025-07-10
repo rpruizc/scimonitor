@@ -42,6 +42,20 @@ class Settings(BaseSettings):
         description="Redis connection string for caching and sessions"
     )
     
+    # Supabase Auth
+    supabase_url: str = Field(
+        default="",
+        description="Supabase project URL for authentication"
+    )
+    supabase_anon_key: str = Field(
+        default="",
+        description="Supabase anonymous/public API key"
+    )
+    supabase_service_key: Optional[str] = Field(
+        default=None,
+        description="Supabase service role key for admin operations"
+    )
+    
     # Security
     secret_key: str = Field(
         default="your-secret-key-change-in-production",

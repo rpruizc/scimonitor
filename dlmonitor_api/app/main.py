@@ -9,11 +9,11 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import structlog
 
 from app.core.settings import settings
-from app.api.v1.endpoints import health
+from app.api.v1.endpoints import health, papers, tweets, search, users, auth_test
 from app.db.base import create_tables, close_engine
 
 # Import models to ensure they're registered with SQLAlchemy
-from app.models import ArxivModel, TwitterModel, WorkingQueueModel
+from app.models import ArxivModel, TwitterModel, WorkingQueueModel, UserModel
 
 
 # Configure structured logging
@@ -47,17 +47,22 @@ async def lifespan(app: FastAPI):
     logger.info("Starting DLMonitor API", version=settings.app_version, environment=settings.environment)
     
     # Initialize Sentry for error tracking in production
-    if settings.sentry_dsn:
-        import sentry_sdk
-        from sentry_sdk.integrations.fastapi import FastApiIntegration
-        
-        sentry_sdk.init(
-            dsn=settings.sentry_dsn,
-            integrations=[FastApiIntegration(auto_enable=True)],
-            traces_sample_rate=0.1 if settings.is_production else 1.0,
-            environment=settings.environment,
-        )
-        logger.info("Sentry initialized for error tracking")
+    if settings.sentry_dsn and settings.sentry_dsn.strip() and settings.sentry_dsn.startswith("https://"):
+        try:
+            import sentry_sdk
+            from sentry_sdk.integrations.fastapi import FastApiIntegration
+            
+            sentry_sdk.init(
+                dsn=settings.sentry_dsn,
+                integrations=[FastApiIntegration()],
+                traces_sample_rate=0.1 if settings.is_production else 1.0,
+                environment=settings.environment,
+            )
+            logger.info("Sentry initialized for error tracking")
+        except Exception as e:
+            logger.warning("Failed to initialize Sentry", error=str(e))
+    else:
+        logger.debug("Sentry disabled - no valid DSN provided")
     
     # Initialize database tables
     try:
@@ -112,6 +117,11 @@ def create_application() -> FastAPI:
     
     # Include routers
     app.include_router(health.router, prefix="/api/v1", tags=["Health"])
+    app.include_router(papers.router, prefix="/api/v1", tags=["Papers"])
+    app.include_router(tweets.router, prefix="/api/v1", tags=["Tweets"])
+    app.include_router(search.router, prefix="/api/v1", tags=["Search"])
+    app.include_router(users.router, prefix="/api/v1", tags=["Users"])
+    app.include_router(auth_test.router, prefix="/api/v1", tags=["Auth Testing"])
     
     return app
 
@@ -130,5 +140,6 @@ async def root():
         "environment": settings.environment,
         "docs_url": "/docs" if not settings.is_production else "Documentation disabled in production",
         "database": "SQLAlchemy 2.0 with async support",
-        "models": ["ArxivModel", "TwitterModel", "WorkingQueueModel"],
+        "authentication": "Supabase Auth with JWT tokens",
+        "models": ["ArxivModel", "TwitterModel", "WorkingQueueModel", "UserModel"],
     } 

@@ -24,8 +24,11 @@ redis==5.0.1
 celery==5.3.4
 
 # HTTP Client & APIs
-httpx==0.25.2
+httpx==0.28.1
 aiofiles==23.2.1
+
+# Authentication
+supabase==2.16.0
 
 # Development & Testing
 pytest==7.4.3
